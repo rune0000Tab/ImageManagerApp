@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ImageManager Workspace (Firebase Sync)</title>
+<style>
+  * {
+    box-sizing: border-box;
+    font-family: "Segoe UI", "Meiryo", "Helvetica Neue", sans-serif;
+  }
+  body {
+    margin: 0;
+    background: #f1f5f9;
+    color: #334155;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* トップヘッダー */
+  .app-header {
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 0 20px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    z-index: 10;
+  }
+  .app-header .logo {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .app-header .status {
+    margin-left: auto;
+    font-size: 12px;
+    color: #38bdf8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    background: #38bdf8;
+    border-radius: 50%;
+  }
+
+  /* メインレイアウト */
+  .app-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  .sidebar {
+    width: 350px;
+    background: #ffffff;
+    border-right: 1px solid #cbd5e1;
+    padding: 15px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+  .main-content {
+    flex: 1;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* 汎用パネル */
+  .panel {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+  }
+  .h-100 { height: 100%; }
+  
+  .panel-header {
+    background: #f8fafc;
+    padding: 10px 15px;
+    font-size: 13px;
+    font-weight: bold;
+    border-bottom: 1px solid #cbd5e1;
+    color: #1e293b;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-body { padding: 15px; }
+
+  /* フォーム部品 */
+  .form-group { margin-bottom: 12px; }
+  .form-group label {
+    display: block;
+    font-size: 11px;
+    font-weight: bold;
+    color: #64748b;
+    margin-bottom: 4px;
+  }
+  .required { color: #ef4444; }
+
+  input, select {
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+    font-size: 13px;
+    color: #1e293b;
+    background: #ffffff;
+    transition: all 0.2s;
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  }
+  input:disabled {
+    background: #f1f5f9;
+    color: #94a3b8;
+  }
+
+  .btn {
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { filter: brightness(0.95); }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  
+  .btn-primary { background: #2563eb; color: #ffffff; }
+  .btn-default { background: #ffffff; border-color: #cbd5e1; color: #334155; }
+  .btn-danger { background: #ffffff; border-color: #fca5a5; color: #ef4444; }
+
+  .w-100 { width: 100%; }
+  .flex-group { display: flex; gap: 8px; }
+  .flex-group input, .flex-group select { flex: 1; }
+  
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .toolbar select {
+    width: auto;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  .toolbar .btn { padding: 4px 8px; }
+
+  /* ドラッグ＆ドロップ領域 */
+  .drop-zone {
+    border: 1px dashed #94a3b8;
+    border-radius: 4px;
+    padding: 20px 10px;
+    text-align: center;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 12px;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+  .drop-zone-icon {
+    font-size: 20px;
+    margin-bottom: 6px;
+    pointer-events: none;
+  }
+  .drop-zone-text {
+    color: #475569;
+    font-size: 12px;
+    font-weight: bold;
+    pointer-events: none;
+  }
+
+  .preview {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .preview img {
+    width: 100%;
+    height: 50px;
+    object-fit: cover;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #fff;
+  }
+
+  /* プログレスバー */
+  .progress-container {
+    display: none;
+    margin-top: 15px;
+    padding: 10px;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+  }
+  .progress-text {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: bold;
+    color: #475569;
+    margin-bottom: 6px;
+  }
+  .progress-bar-bg {
+    width: 100%;
+    background: #e2e8f0;
+    border-radius: 2px;
+    height: 6px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    width: 0%;
+    height: 100%;
+    background: #2563eb;
+    transition: width 0.1s;
+  }
+
+  /* 履歴グリッド */
+  #history { display: grid; gap: 12px; }
+  .history-item {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+  }
+  .history-item img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: contain;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 2px;
+    margin-bottom: 8px;
+    cursor: zoom-in;
+  }
+  .history-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+  .tag {
+    align-self: flex-start;
+    padding: 2px 6px;
+    background: #e2e8f0;
+    color: #334155;
+    border-radius: 2px;
+    font-size: 10px;
+    font-weight: bold;
+  }
+  .date { font-size: 10px; color: #64748b; }
+  .url {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 4px 6px;
+    border-radius: 2px;
+    font-size: 10px;
+    color: #475569;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .action-btns {
+    display: flex;
+    gap: 6px;
+    margin-top: auto;
+  }
+  .action-btns .btn { flex: 1; padding: 5px 0; font-size: 11px; }
+
+  /* 列数 */
+  .col-3 { grid-template-columns: repeat(3, 1fr); }
+  .col-5 { grid-template-columns: repeat(5, 1fr); }
+  .col-8 { grid-template-columns: repeat(8, 1fr); }
+  .col-10 { grid-template-columns: repeat(10, 1fr); }
+
+  /* モーダル */
+  .modal {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    padding-top: 30px;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(15, 23, 42, 0.9);
+  }
+  .modal-content {
+    margin: auto;
+    display: block;
+    max-width: 90%;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+  .close-btn {
+    position: absolute;
+    top: 15px;
+    right: 25px;
+    color: #94a3b8;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .close-btn:hover { color: #ffffff; }
+
+  /* レスポンシブ */
+  @media (max-width: 768px) {
+    .app-body { flex-direction: column; overflow-y: auto; }
+    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #cbd5e1; overflow-y: visible; }
+    .main-content { overflow-y: visible; }
+    body { overflow: auto; }
+    .panel-body.scrollable { height: auto !important; overflow: visible; }
+    .toolbar { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="logo">📸 ImageManager Workspace</div>
+  <div class="status" id="cloudStatus"><div class="status-dot"></div>Cloud Syncing...</div>
+</div>
+
+<div class="app-body">
+  
+  <aside class="sidebar">
+    <!-- アップロード & フォルダー管理 パネル -->
+    <div class="panel">
+      <div class="panel-header">アップロード & フォルダー管理</div>
+      <div class="panel-body">
+        
+        <div class="form-group">
+          <label>保存先フォルダー</label>
+          <div class="flex-group">
+            <select id="tagSelect" onchange="onTagChange()"></select>
+            <button onclick="deleteSelectedTag()" class="btn btn-danger" style="width: auto;">削除</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>新規フォルダー作成</label>
+          <div class="flex-group">
+            <input id="newTag" placeholder="フォルダー名">
+            <button onclick="addTag()" class="btn btn-default" style="width: auto;">追加</button>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label>Discord通知 <span style="color:#2563eb;">(選択中フォルダー用)</span></label>
+          <div class="flex-group">
+            <input id="webhookUrl" type="password" placeholder="Webhook URL (空欄可)">
+            <button onclick="saveWebhook()" class="btn btn-default" style="width: 50px;">保存</button>
+            <button onclick="changeWebhook()" class="btn btn-danger" style="width: 50px;">変更</button>
+          </div>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #cbd5e1; margin-bottom: 15px;">
+        
+        <div id="dropZone" class="drop-zone" onclick="document.getElementById('files').click()">
+          <div class="drop-zone-icon">📁</div>
+          <div class="drop-zone-text">画像ファイルを選択、またはドロップ</div>
+          <input id="files" type="file" multiple accept="image/*" style="display: none;">
+        </div>
+        <div id="preview" class="preview"></div>
+
+        <button id="uploadBtn" class="btn btn-primary w-100" style="margin-top: 10px;" onclick="upload()" disabled>
+          読み込み中...
+        </button>
+
+        <div id="progressContainer" class="progress-container">
+          <div class="progress-text">
+            <span id="progressLabel">処理中...</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="progressBarFill" class="progress-bar-fill"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- システム設定パネル (全体設定) -->
+    <div class="panel">
+      <div class="panel-header">システム設定</div>
+      <div class="panel-body">
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>ImgBB APIキー <span class="required">*必須</span></label>
+          <div class="flex-group">
+            <input id="apikey" type="password" placeholder="APIキーを入力">
+            <button onclick="saveAPI()" class="btn btn-default" style="width: 50px;">保存</button>
+            <button onclick="changeAPI()" class="btn btn-danger" style="width: 50px;">変更</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 右ペイン：データビュー -->
+  <main class="main-content">
+    <div class="panel h-100">
+      <div class="panel-header">
+        <span>データエクスプローラー</span>
+        <div class="toolbar">
+          <select id="filterSelect" onchange="render()">
+            <option value="all">📁 すべてのフォルダー</option>
+          </select>
+          <select id="columnSelect" onchange="changeColumns()">
+            <option value="3">3列表示</option>
+            <option value="5">5列表示</option>
+            <option value="8">8列表示</option>
+            <option value="10">10列表示</option>
+          </select>
+          <button onclick="downloadJSON()" class="btn btn-default">⬇️ JSON出力</button>
+        </div>
+      </div>
+      
+      <div class="panel-body scrollable" style="background: #f8fafc; height: calc(100% - 45px); overflow-y: auto;">
+        <div id="history"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- モーダル -->
+<div id="imageModal" class="modal" onclick="closeModal()">
+  <span class="close-btn">&times;</span>
+  <img class="modal-content" id="modalImage">
+</div>
+
+<!-- ★ Firebase モジュール読み込みとアプリの実行 ★ -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // ==========================================
+  // 🔴 ここにあなたのFirebase設定を貼り付けてください 🔴
+  // ==========================================
+  const firebaseConfig = {
+  apiKey: "AIzaSyD0N3JxEqwjdRQGgVvS0Z3J5xxgsqPO0-c",
+  authDomain: "imagemanagerapp-93629.firebaseapp.com",
+  projectId: "imagemanagerapp-93629",
+  storageBucket: "imagemanagerapp-93629.firebasestorage.app",
+  messagingSenderId: "932908018514",
+  appId: "1:932908018514:web:63c687d1f07caebcf1e88b",
+  measurementId: "G-P7ELJWG323"
+};
+
+  // Firebase の初期化
+  let db;
+  let DOC_REF;
+  try {
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    // 保存先を "appData" コレクションの "my_workspace" に固定します
+    DOC_REF = doc(db, "appData", "my_workspace");
+  } catch(e) {}
+
+  // ==========================================
+  // 変数とDOM要素
+  // ==========================================
+  const elDropZone = document.getElementById('dropZone');
+  const elFiles = document.getElementById('files');
+  const elPreview = document.getElementById('preview');
+  const elTagSelect = document.getElementById('tagSelect');
+  const elNewTag = document.getElementById('newTag');
+  const elUploadBtn = document.getElementById('uploadBtn');
+  const elApikey = document.getElementById('apikey');
+  const elWebhookUrl = document.getElementById('webhookUrl');
+  const elHistory = document.getElementById('history');
+  const elFilterSelect = document.getElementById('filterSelect');
+  const elColumnSelect = document.getElementById('columnSelect');
+  
+  const elProgressContainer = document.getElementById('progressContainer');
+  const elProgressLabel = document.getElementById('progressLabel');
+  const elProgressPercent = document.getElementById('progressPercent');
+  const elProgressBarFill = document.getElementById('progressBarFill');
+  const elCloudStatus = document.getElementById('cloudStatus');
+
+  let selectedFiles = []; 
+  
+  // クラウドから同期するデータ変数
+  let historyData = [];
+  let tags = ["default"];
+  let webhooks = {};
+  
+  const PASSWORD = "851300";
+
+  // ==========================================
+  // Firebase への保存・読み込み処理
+  // ==========================================
+  async function loadFromFirebase() {
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+      alert("⚠️ Firebase設定（firebaseConfig）がコードに貼り付けられていません。\nローカルモードとして動作します。");
+      elCloudStatus.innerHTML = "Local Mode";
+      elCloudStatus.style.color = "#94a3b8";
+      
+      // 旧ローカルストレージからの読み込みにフォールバック
+      historyData = JSON.parse(localStorage.getItem("history") || "[]");
+      tags = JSON.parse(localStorage.getItem("tags") || '["default"]');
+      webhooks = JSON.parse(localStorage.getItem("webhooks") || "{}");
+      elApikey.value = localStorage.getItem("api") || "";
+      if(elApikey.value) elApikey.disabled = true;
+      updateUI();
+      return;
+    }
+
+    try {
+      const docSnap = await getDoc(DOC_REF);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        tags = data.tags || ["default"];
+        historyData = data.history || [];
+        webhooks = data.webhooks || {};
+        if (data.api) {
+          elApikey.value = data.api;
+          elApikey.disabled = true;
+        }
+      } else {
+        // 初回アクセス時はデフォルトデータを保存
+        await saveToFirebase();
+      }
+      elCloudStatus.innerHTML = '<div class="status-dot" style="background:#22c55e;"></div>Cloud Synced';
+      elCloudStatus.style.color = "#22c55e";
+    } catch (e) {
+      alert("データベースアクセスエラー\nFirebaseの設定かセキュリティルール（テストモード）を確認してください。\n" + e.message);
+    }
+    updateUI();
+  }
+
+  async function saveToFirebase() {
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+      // ローカル保存
+      localStorage.setItem("tags", JSON.stringify(tags));
+      localStorage.setItem("history", JSON.stringify(historyData));
+      localStorage.setItem("webhooks", JSON.stringify(webhooks));
+      localStorage.setItem("api", elApikey.value);
+      return;
+    }
+
+    elCloudStatus.innerHTML = '<div class="status-dot" style="background:#eab308;"></div>Saving...';
+    try {
+      await setDoc(DOC_REF, {
+        tags: tags,
+        history: historyData,
+        webhooks: webhooks,
+        api: elApikey.value
+      });
+      elCloudStatus.innerHTML = '<div class="status-dot" style="background:#22c55e;"></div>Cloud Synced';
+    } catch (e) {
+      console.error(e);
+      elCloudStatus.innerHTML = '<div class="status-dot" style="background:#ef4444;"></div>Save Failed';
+    }
+  }
+
+  // ==========================================
+  // UI とアクションの処理
+  // ==========================================
+  function updateUI() {
+    elTagSelect.innerHTML = "";
+    elFilterSelect.innerHTML = '<option value="all">📁 すべてのフォルダー</option>';
+    
+    tags.forEach(t => {
+      let o = document.createElement("option"); o.value = t; o.textContent = t;
+      elTagSelect.appendChild(o);
+      let fo = document.createElement("option"); fo.value = t; fo.textContent = t;
+      elFilterSelect.appendChild(fo);
+    });
+
+    let savedCols = localStorage.getItem("historyColumns") || "5"; // 列設定は端末固有でOK
+    elColumnSelect.value = savedCols;
+    changeColumns();
+
+    onTagChange();
+    render();
+
+    elUploadBtn.disabled = false;
+    elUploadBtn.textContent = "アップロード実行";
+  }
+
+  function handleFiles(files) {
+    selectedFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+    elPreview.innerHTML = ""; 
+    if (selectedFiles.length === 0) return;
+    selectedFiles.forEach(f => {
+      let img = document.createElement('img');
+      img.src = URL.createObjectURL(f);
+      img.onload = () => URL.revokeObjectURL(img.src);
+      elPreview.appendChild(img);
+    });
+  }
+
+  elFiles.addEventListener('change', (e) => handleFiles(e.target.files));
+  elDropZone.addEventListener('dragover', (e) => { e.preventDefault(); elDropZone.classList.add('dragover'); });
+  elDropZone.addEventListener('dragleave', () => { elDropZone.classList.remove('dragover'); });
+  elDropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    elDropZone.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
+      elFiles.files = e.dataTransfer.files;
+    }
+  });
+
+  function changeColumns() {
+    const cols = elColumnSelect.value;
+    elHistory.className = `col-${cols}`;
+    localStorage.setItem("historyColumns", cols);
+  }
+
+  async function addTag() {
+    let t = elNewTag.value.trim();
+    if (!t) return;
+    if (!tags.includes(t)) {
+      tags.push(t);
+      await saveToFirebase();
+      updateUI();
+    }
+    elNewTag.value = "";
+  }
+
+  async function deleteSelectedTag() {
+    let t = elTagSelect.value;
+    if (t === "default") return alert("「default」は削除できません");
+    if (confirm(`「${t}」を削除しますか？\n※履歴データは保持されます。`)) {
+      tags = tags.filter(tag => tag !== t);
+      delete webhooks[t];
+      await saveToFirebase();
+      if (elFilterSelect.value === t) elFilterSelect.value = "all";
+      updateUI();
+    }
+  }
+
+  async function deleteImage(url) {
+    if (confirm("履歴から削除しますか？\n（ImgBBサーバー上からは削除されません）")) {
+      historyData = historyData.filter(img => img.url !== url);
+      await saveToFirebase();
+      render();
+    }
+  }
+
+  async function saveAPI() {
+    if(!elApikey.value.trim()) return alert("APIキーを入力してください");
+    elApikey.disabled = true;
+    await saveToFirebase();
+    alert("保存しました");
+  }
+  
+  function changeAPI() {
+    if (prompt("パスワード") === PASSWORD) {
+      elApikey.disabled = false; elApikey.value = "";
+    } else { alert("パスワードが違います"); }
+  }
+
+  function onTagChange() {
+    let tag = elTagSelect.value;
+    let hook = webhooks[tag];
+    if (hook) {
+      elWebhookUrl.value = hook;
+      elWebhookUrl.disabled = true;
+    } else {
+      elWebhookUrl.value = "";
+      elWebhookUrl.disabled = false;
+    }
+  }
+
+  async function saveWebhook() {
+    let tag = elTagSelect.value;
+    let val = elWebhookUrl.value.trim();
+    
+    if(!val) {
+      delete webhooks[tag];
+      await saveToFirebase();
+      elWebhookUrl.disabled = false;
+      alert(`[${tag}] の通知設定を解除しました`);
+      return;
+    }
+
+    webhooks[tag] = val;
+    await saveToFirebase();
+    elWebhookUrl.disabled = true;
+    alert(`[${tag}] の通知URLを保存しました`);
+  }
+  
+  function changeWebhook() {
+    if (prompt("パスワード") === PASSWORD) {
+      elWebhookUrl.disabled = false; elWebhookUrl.value = "";
+    } else { alert("パスワードが違います"); }
+  }
+
+  async function sendDiscordNotification(imageUrl, tag) {
+    let hook = webhooks[tag];
+    if (!hook) return; 
+
+    const payload = {
+      content: `📁 **${tag}** に新しい画像がアップロードされました！\nURL: ${imageUrl}`,
+      embeds: [{ image: { url: imageUrl }, color: 3447003 }]
+    };
+    try {
+      await fetch(hook, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } catch (error) { console.error("Discordエラー:", error); }
+  }
+
+  async function upload() {
+    let key = elApikey.value;
+    if (!key) return alert("ImgBB APIキーが未設定です。");
+    if (selectedFiles.length === 0) return alert("画像を選択してください。");
+
+    let tag = elTagSelect.value;
+    
+    elUploadBtn.disabled = true;
+    elDropZone.style.pointerEvents = "none";
+    elDropZone.style.opacity = "0.5";
+    elProgressContainer.style.display = "block";
+
+    let successCount = 0;
+    let hasNewHistory = false;
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      elProgressLabel.textContent = `${selectedFiles.length}ファイル中 ${i + 1}件目を処理中...`;
+      elProgressBarFill.style.width = "0%";
+      elProgressPercent.textContent = "0%";
+
+      try {
+        let result = await uploadSingleImage(selectedFiles[i], key, (percent) => {
+          elProgressBarFill.style.width = percent + "%";
+          elProgressPercent.textContent = percent + "%";
+        });
+
+        if (result && result.success) {
+          historyData.push({
+            url: result.data.url,
+            tag: tag,
+            date: new Date().toLocaleString()
+          });
+          hasNewHistory = true;
+          successCount++;
+          await sendDiscordNotification(result.data.url, tag);
+        }
+      } catch (error) {
+        alert(`${i + 1}件目のアップロードに失敗しました。\n原因: ${error}`);
+      }
+    }
+
+    // すべての処理が終わったら1回だけFirebaseに書き込んで通信量を節約
+    if (hasNewHistory) {
+      await saveToFirebase();
+    }
+
+    elProgressLabel.textContent = "すべての処理が完了しました";
+    setTimeout(() => {
+      elProgressContainer.style.display = "none";
+      elUploadBtn.disabled = false;
+      elDropZone.style.pointerEvents = "auto";
+      elDropZone.style.opacity = "1";
+      
+      elFiles.value = "";
+      selectedFiles = [];
+      elPreview.innerHTML = "";
+      
+      elFilterSelect.value = tag;
+      render();
+    }, 500);
+  }
+
+  function uploadSingleImage(file, apiKey, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "https://api.imgbb.com/1/upload?key=" + apiKey);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const p = Math.floor((event.loaded / event.total) * 100);
+          onProgress(p);
+        }
+      };
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          try { resolve(JSON.parse(xhr.responseText)); } 
+          catch (e) { reject("レスポンス解析エラー"); }
+        } else { 
+          let errorMsg = `HTTP ${xhr.status}`;
+          try {
+            let res = JSON.parse(xhr.responseText);
+            if (res.error && res.error.message) errorMsg += ` - ${res.error.message}`;
+          } catch(e) {}
+          reject(`通信エラー (${errorMsg})`);
+        }
+      };
+      xhr.onerror = () => reject("ネットワークエラー");
+
+      const form = new FormData();
+      form.append("image", file);
+      xhr.send(form);
+    });
+  }
+
+  function render() {
+    elHistory.innerHTML = "";
+    let filterTag = elFilterSelect.value;
+    
+    let displayData = historyData.slice().reverse();
+    if (filterTag !== "all") {
+      displayData = displayData.filter(x => x.tag === filterTag);
+    }
+
+    if (displayData.length === 0) {
+      elHistory.innerHTML = '<div style="color:#94a3b8; text-align:center; padding: 30px; grid-column: 1 / -1; font-size: 13px;">データが存在しません</div>';
+      return;
+    }
+
+    displayData.forEach(x => {
+      let d = document.createElement("div");
+      d.className = "history-item";
+      d.innerHTML = `
+        <img src="${x.url}" loading="lazy" alt="Image" onclick="openModal('${x.url}')" title="クリックで拡大">
+        <div class="history-info">
+          <div class="tag">📁 ${x.tag}</div>
+          <div class="date">${x.date}</div>
+          <div class="url" title="${x.url}">${x.url}</div>
+        </div>
+        <div class="action-btns">
+          <button onclick="copy('${x.url}')" class="btn btn-default" title="URLをコピー">📋 コピー</button>
+          <button onclick="deleteImage('${x.url}')" class="btn btn-danger" title="リストから削除">🗑️</button>
+        </div>
+      `;
+      elHistory.appendChild(d);
+    });
+  }
+
+  function copy(url) {
+    navigator.clipboard.writeText(url)
+      .then(() => alert("クリップボードにURLをコピーしました"))
+      .catch(() => alert("コピーに失敗しました"));
+  }
+
+  function openModal(url) {
+    document.getElementById('imageModal').style.display = "block";
+    document.getElementById('modalImage').src = url;
+  }
+  function closeModal() {
+    document.getElementById('imageModal').style.display = "none";
+    document.getElementById('modalImage').src = "";
+  }
+
+  function downloadJSON() {
+    if (historyData.length === 0) return alert("出力するデータがありません。");
+    const folderStructure = {};
+    historyData.forEach(item => {
+      if (!folderStructure[item.tag]) folderStructure[item.tag] = [];
+      folderStructure[item.tag].push({ url: item.url, upload_date: item.date });
+    });
+    const jsonString = JSON.stringify(folderStructure, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "imagemanager_export.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ==========================================
+  // HTML側から関数を呼び出せるようにする
+  // ==========================================
+  window.deleteSelectedTag = deleteSelectedTag;
+  window.addTag = addTag;
+  window.upload = upload;
+  window.saveAPI = saveAPI;
+  window.changeAPI = changeAPI;
+  window.onTagChange = onTagChange;
+  window.saveWebhook = saveWebhook;
+  window.changeWebhook = changeWebhook;
+  window.render = render;
+  window.changeColumns = changeColumns;
+  window.downloadJSON = downloadJSON;
+  window.openModal = openModal;
+  window.closeModal = closeModal;
+  window.copy = copy;
+  window.deleteImage = deleteImage;
+
+  // アプリ起動時の読み込み
+  loadFromFirebase();
+
+</script>
+
+</body>
+</html>
