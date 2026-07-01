@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ImageManager Workspace (Firebase Sync)</title>
+<title>ImageManager Workspace (Realtime Sync)</title>
 <style>
   * {
     box-sizing: border-box;
@@ -296,16 +296,13 @@
   .col-8 { grid-template-columns: repeat(8, 1fr); }
   .col-10 { grid-template-columns: repeat(10, 1fr); }
 
-  /* モーダル */
+  /* モーダル共通 (画像拡大用 & パスワード用) */
   .modal {
     display: none;
     position: fixed;
     z-index: 9999;
-    padding-top: 30px;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
     background-color: rgba(15, 23, 42, 0.9);
   }
   .modal-content {
@@ -327,6 +324,16 @@
   }
   .close-btn:hover { color: #ffffff; }
 
+  /* パスワードモーダル専用デザイン */
+  .pwd-modal-inner {
+    background: #ffffff;
+    width: 320px;
+    padding: 25px;
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+
   /* レスポンシブ */
   @media (max-width: 768px) {
     .app-body { flex-direction: column; overflow-y: auto; }
@@ -342,7 +349,7 @@
 
 <div class="app-header">
   <div class="logo">📸 ImageManager Workspace</div>
-  <div class="status" id="cloudStatus"><div class="status-dot"></div>Cloud Syncing...</div>
+  <div class="status" id="cloudStatus"><div class="status-dot"></div>Connecting...</div>
 </div>
 
 <div class="app-body">
@@ -372,7 +379,7 @@
         <div class="form-group" style="margin-bottom: 20px;">
           <label>Discord通知 <span style="color:#2563eb;">(選択中フォルダー用)</span></label>
           <div class="flex-group">
-            <input id="webhookUrl" type="password" placeholder="Webhook URL (空欄可)">
+            <input id="webhookUrl" type="text" placeholder="Webhook URL (空欄可)">
             <button onclick="saveWebhook()" class="btn btn-default" style="width: 50px;">保存</button>
             <button onclick="changeWebhook()" class="btn btn-danger" style="width: 50px;">変更</button>
           </div>
@@ -411,7 +418,7 @@
         <div class="form-group" style="margin-bottom: 0;">
           <label>ImgBB APIキー <span class="required">*必須</span></label>
           <div class="flex-group">
-            <input id="apikey" type="password" placeholder="APIキーを入力">
+            <input id="apikey" type="text" placeholder="APIキーを入力">
             <button onclick="saveAPI()" class="btn btn-default" style="width: 50px;">保存</button>
             <button onclick="changeAPI()" class="btn btn-danger" style="width: 50px;">変更</button>
           </div>
@@ -446,16 +453,28 @@
   </main>
 </div>
 
-<!-- モーダル -->
-<div id="imageModal" class="modal" onclick="closeModal()">
+<!-- ★ 画像拡大用モーダル ★ -->
+<div id="imageModal" class="modal" onclick="closeModal()" style="padding-top: 30px;">
   <span class="close-btn">&times;</span>
   <img class="modal-content" id="modalImage">
 </div>
 
-<!-- ★ Firebase モジュール読み込みとアプリの実行 ★ -->
+<!-- ★ .exeでも動く！カスタムパスワード入力モーダル ★ -->
+<div id="passwordModal" class="modal" style="display:none; align-items:center; justify-content:center;">
+  <div class="pwd-modal-inner">
+    <h3 style="margin-top: 0; margin-bottom: 15px; color: #1e293b; font-size: 16px;">🔐 パスワード認証</h3>
+    <input type="text" id="modalPasswordInput" placeholder="パスワードを入力" style="margin-bottom: 20px; text-align: center; font-size: 16px; padding: 10px;">
+    <div class="flex-group">
+      <button class="btn btn-default w-100" onclick="closePasswordModal()">キャンセル</button>
+      <button class="btn btn-primary w-100" onclick="submitPassword()">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase モジュール読み込みとアプリの実行 -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   // ==========================================
   // 🔴 ここにあなたのFirebase設定を貼り付けてください 🔴
@@ -463,6 +482,7 @@
   const firebaseConfig = {
   apiKey: "AIzaSyD0N3JxEqwjdRQGgVvS0Z3J5xxgsqPO0-c",
   authDomain: "imagemanagerapp-93629.firebaseapp.com",
+  databaseURL: "https://imagemanagerapp-93629-default-rtdb.firebaseio.com",
   projectId: "imagemanagerapp-93629",
   storageBucket: "imagemanagerapp-93629.firebasestorage.app",
   messagingSenderId: "932908018514",
@@ -476,7 +496,6 @@
   try {
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
-    // 保存先を "appData" コレクションの "my_workspace" に固定します
     DOC_REF = doc(db, "appData", "my_workspace");
   } catch(e) {}
 
@@ -511,7 +530,43 @@
   const PASSWORD = "851300";
 
   // ==========================================
-  // Firebase への保存・読み込み処理
+  // 🔐 カスタムパスワードモーダルの処理（★バグ修正版★）
+  // ==========================================
+  let passwordCallback = null;
+
+  window.showPasswordPrompt = function(callback) {
+    passwordCallback = callback;
+    const modal = document.getElementById('passwordModal');
+    const input = document.getElementById('modalPasswordInput');
+    input.value = "";
+    modal.style.display = "flex"; 
+    input.focus();
+  };
+
+  window.closePasswordModal = function() {
+    document.getElementById('passwordModal').style.display = "none";
+    passwordCallback = null;
+  };
+
+  window.submitPassword = function() {
+    const pwd = document.getElementById('modalPasswordInput').value;
+    const cb = passwordCallback; // 消える前に保存しておく！
+    
+    closePasswordModal(); // モーダルを閉じる
+    
+    // パスワードの判定を実行する
+    if (cb) {
+      cb(pwd);
+    }
+  };
+
+  document.getElementById('modalPasswordInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') submitPassword();
+  });
+
+
+  // ==========================================
+  // 🔄 Firebase へのリアルタイム同期処理
   // ==========================================
   async function loadFromFirebase() {
     if (firebaseConfig.apiKey === "YOUR_API_KEY") {
@@ -519,7 +574,6 @@
       elCloudStatus.innerHTML = "Local Mode";
       elCloudStatus.style.color = "#94a3b8";
       
-      // 旧ローカルストレージからの読み込みにフォールバック
       historyData = JSON.parse(localStorage.getItem("history") || "[]");
       tags = JSON.parse(localStorage.getItem("tags") || '["default"]');
       webhooks = JSON.parse(localStorage.getItem("webhooks") || "{}");
@@ -529,32 +583,33 @@
       return;
     }
 
-    try {
-      const docSnap = await getDoc(DOC_REF);
+    onSnapshot(DOC_REF, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         tags = data.tags || ["default"];
         historyData = data.history || [];
         webhooks = data.webhooks || {};
-        if (data.api) {
+        
+        if (data.api && elApikey.disabled) {
           elApikey.value = data.api;
-          elApikey.disabled = true;
         }
+
+        elCloudStatus.innerHTML = '<div class="status-dot" style="background:#22c55e;"></div>Realtime Sync On';
+        elCloudStatus.style.color = "#22c55e";
+        
+        updateUI();
       } else {
-        // 初回アクセス時はデフォルトデータを保存
-        await saveToFirebase();
+        saveToFirebase();
       }
-      elCloudStatus.innerHTML = '<div class="status-dot" style="background:#22c55e;"></div>Cloud Synced';
-      elCloudStatus.style.color = "#22c55e";
-    } catch (e) {
-      alert("データベースアクセスエラー\nFirebaseの設定かセキュリティルール（テストモード）を確認してください。\n" + e.message);
-    }
-    updateUI();
+    }, (error) => {
+      console.error(error);
+      elCloudStatus.innerHTML = '<div class="status-dot" style="background:#ef4444;"></div>Sync Error';
+      elCloudStatus.style.color = "#ef4444";
+    });
   }
 
   async function saveToFirebase() {
     if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-      // ローカル保存
       localStorage.setItem("tags", JSON.stringify(tags));
       localStorage.setItem("history", JSON.stringify(historyData));
       localStorage.setItem("webhooks", JSON.stringify(webhooks));
@@ -562,7 +617,6 @@
       return;
     }
 
-    elCloudStatus.innerHTML = '<div class="status-dot" style="background:#eab308;"></div>Saving...';
     try {
       await setDoc(DOC_REF, {
         tags: tags,
@@ -570,10 +624,8 @@
         webhooks: webhooks,
         api: elApikey.value
       });
-      elCloudStatus.innerHTML = '<div class="status-dot" style="background:#22c55e;"></div>Cloud Synced';
     } catch (e) {
-      console.error(e);
-      elCloudStatus.innerHTML = '<div class="status-dot" style="background:#ef4444;"></div>Save Failed';
+      console.error("保存失敗:", e);
     }
   }
 
@@ -581,6 +633,9 @@
   // UI とアクションの処理
   // ==========================================
   function updateUI() {
+    let currentTag = elTagSelect.value;
+    let currentFilter = elFilterSelect.value;
+
     elTagSelect.innerHTML = "";
     elFilterSelect.innerHTML = '<option value="all">📁 すべてのフォルダー</option>';
     
@@ -591,11 +646,17 @@
       elFilterSelect.appendChild(fo);
     });
 
-    let savedCols = localStorage.getItem("historyColumns") || "5"; // 列設定は端末固有でOK
+    if (tags.includes(currentTag)) elTagSelect.value = currentTag;
+    if (currentFilter === "all" || tags.includes(currentFilter)) elFilterSelect.value = currentFilter;
+
+    let savedCols = localStorage.getItem("historyColumns") || "5";
     elColumnSelect.value = savedCols;
     changeColumns();
 
-    onTagChange();
+    if (elWebhookUrl.disabled) {
+      onTagChange(); 
+    }
+
     render();
 
     elUploadBtn.disabled = false;
@@ -638,7 +699,6 @@
     if (!tags.includes(t)) {
       tags.push(t);
       await saveToFirebase();
-      updateUI();
     }
     elNewTag.value = "";
   }
@@ -649,9 +709,9 @@
     if (confirm(`「${t}」を削除しますか？\n※履歴データは保持されます。`)) {
       tags = tags.filter(tag => tag !== t);
       delete webhooks[t];
-      await saveToFirebase();
+      
       if (elFilterSelect.value === t) elFilterSelect.value = "all";
-      updateUI();
+      await saveToFirebase();
     }
   }
 
@@ -659,7 +719,6 @@
     if (confirm("履歴から削除しますか？\n（ImgBBサーバー上からは削除されません）")) {
       historyData = historyData.filter(img => img.url !== url);
       await saveToFirebase();
-      render();
     }
   }
 
@@ -671,9 +730,13 @@
   }
   
   function changeAPI() {
-    if (prompt("パスワード") === PASSWORD) {
-      elApikey.disabled = false; elApikey.value = "";
-    } else { alert("パスワードが違います"); }
+    showPasswordPrompt((pwd) => {
+      if (pwd === PASSWORD) {
+        elApikey.disabled = false; 
+      } else {
+        alert("パスワードが違います");
+      }
+    });
   }
 
   function onTagChange() {
@@ -707,9 +770,13 @@
   }
   
   function changeWebhook() {
-    if (prompt("パスワード") === PASSWORD) {
-      elWebhookUrl.disabled = false; elWebhookUrl.value = "";
-    } else { alert("パスワードが違います"); }
+    showPasswordPrompt((pwd) => {
+      if (pwd === PASSWORD) {
+        elWebhookUrl.disabled = false; 
+      } else {
+        alert("パスワードが違います");
+      }
+    });
   }
 
   async function sendDiscordNotification(imageUrl, tag) {
@@ -717,8 +784,13 @@
     if (!hook) return; 
 
     const payload = {
-      content: `📁 **${tag}** に新しい画像がアップロードされました！\nURL: ${imageUrl}`,
-      embeds: [{ image: { url: imageUrl }, color: 3447003 }]
+      content: `📁 **${tag}** に新しい画像がアップロードされました！\n\n${imageUrl}`,
+      embeds: [{ 
+        title: "画像を見る",
+        url: imageUrl,
+        image: { url: imageUrl }, 
+        color: 3447003 
+      }]
     };
     try {
       await fetch(hook, {
@@ -770,9 +842,8 @@
       }
     }
 
-    // すべての処理が終わったら1回だけFirebaseに書き込んで通信量を節約
     if (hasNewHistory) {
-      await saveToFirebase();
+      await saveToFirebase(); 
     }
 
     elProgressLabel.textContent = "すべての処理が完了しました";
@@ -785,9 +856,6 @@
       elFiles.value = "";
       selectedFiles = [];
       elPreview.innerHTML = "";
-      
-      elFilterSelect.value = tag;
-      render();
     }, 500);
   }
 
@@ -907,11 +975,12 @@
   window.closeModal = closeModal;
   window.copy = copy;
   window.deleteImage = deleteImage;
+  window.submitPassword = submitPassword;
+  window.closePasswordModal = closePasswordModal;
 
   // アプリ起動時の読み込み
   loadFromFirebase();
 
 </script>
-
 </body>
 </html>
