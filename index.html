@@ -411,7 +411,7 @@
       </div>
     </div>
 
-    <!-- ★システム設定パネル (複数API管理に対応)★ -->
+    <!-- システム設定パネル (複数API管理に対応) -->
     <div class="panel">
       <div class="panel-header">システム設定 (ImgBB API)</div>
       <div class="panel-body">
@@ -489,15 +489,13 @@
   // 🔴 ここにあなたのFirebase設定を貼り付けてください 🔴
   // ==========================================
   const firebaseConfig = {
-  apiKey: "AIzaSyD0N3JxEqwjdRQGgVvS0Z3J5xxgsqPO0-c",
-  authDomain: "imagemanagerapp-93629.firebaseapp.com",
-  databaseURL: "https://imagemanagerapp-93629-default-rtdb.firebaseio.com",
-  projectId: "imagemanagerapp-93629",
-  storageBucket: "imagemanagerapp-93629.firebasestorage.app",
-  messagingSenderId: "932908018514",
-  appId: "1:932908018514:web:63c687d1f07caebcf1e88b",
-  measurementId: "G-P7ELJWG323"
-};
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
 
   // Firebase の初期化
   let db;
@@ -518,7 +516,6 @@
   const elNewTag = document.getElementById('newTag');
   const elUploadBtn = document.getElementById('uploadBtn');
   
-  // ★追加: APIキー関連の要素
   const elApiSelect = document.getElementById('apiSelect');
   const elNewApi = document.getElementById('newApi');
 
@@ -539,7 +536,7 @@
   let historyData = [];
   let tags = ["default"];
   let webhooks = {};
-  let apiKeys = []; // ★複数APIキーを管理する配列★
+  let apiKeys = []; 
   
   const PASSWORD = "851300";
 
@@ -588,7 +585,6 @@
       webhooks = JSON.parse(localStorage.getItem("webhooks") || "{}");
       apiKeys = JSON.parse(localStorage.getItem("apiKeys") || "[]");
       
-      // 旧バージョンのAPIキー引き継ぎ処理
       let oldApi = localStorage.getItem("api");
       if (oldApi && apiKeys.length === 0) apiKeys.push(oldApi);
 
@@ -604,7 +600,6 @@
         webhooks = data.webhooks || {};
         apiKeys = data.apiKeys || [];
 
-        // データベースから旧バージョンのAPIキーを引き継ぐ
         if (data.api && apiKeys.length === 0) apiKeys.push(data.api);
 
         elCloudStatus.innerHTML = '<div class="status-dot" style="background:#22c55e;"></div>Realtime Sync On';
@@ -646,7 +641,6 @@
   // UI とアクションの処理
   // ==========================================
   function updateUI() {
-    // 1. フォルダーのUI更新
     let currentTag = elTagSelect.value;
     let currentFilter = elFilterSelect.value;
     elTagSelect.innerHTML = "";
@@ -662,13 +656,12 @@
     if (tags.includes(currentTag)) elTagSelect.value = currentTag;
     if (currentFilter === "all" || tags.includes(currentFilter)) elFilterSelect.value = currentFilter;
 
-    // 2. ★APIキーのセレクトボックスの更新★
+    // APIキーのセレクトボックスの更新
     let currentApi = elApiSelect.value || localStorage.getItem("selectedApi");
     elApiSelect.innerHTML = "";
     apiKeys.forEach(k => {
       let o = document.createElement("option"); 
       o.value = k; 
-      // 長いキーを少し見やすくする
       o.textContent = "🔑 " + k.substring(0, 10) + "..."; 
       elApiSelect.appendChild(o);
     });
@@ -682,7 +675,6 @@
       localStorage.removeItem("selectedApi");
     }
 
-    // 3. その他UIの復元
     let savedCols = localStorage.getItem("historyColumns") || "5";
     elColumnSelect.value = savedCols;
     changeColumns();
@@ -757,13 +749,12 @@
   }
 
   // ==========================================
-  // ★ 複数APIキーの追加・削除処理 ★
+  // APIキーの追加・削除処理
   // ==========================================
   function addAPI() {
     let val = elNewApi.value.trim();
     if (!val) return;
     
-    // API追加時にも一応パスワード保護をかけておく
     showPasswordPrompt(async (pwd) => {
       if (pwd === PASSWORD) {
         if (!apiKeys.includes(val)) {
@@ -837,20 +828,22 @@
     });
   }
 
-  // ★変更: URL改行問題対応（確実に画像を埋め込む）★
-  async function sendDiscordNotification(pageUrl, imageUrl, tag) {
+  // ★ 改善点：Discordで画像が100%展開される仕様に変更 ★
+  async function sendDiscordNotification(imageUrl, tag) {
     let hook = webhooks[tag];
     if (!hook) return; 
 
+    // 長いファイル名などでDiscordの処理がバグらないようにURLを安全化
+    const safeUrl = encodeURI(decodeURI(imageUrl));
+
     const payload = {
-      // ユーザーが見るURLはcontentに。URLが長くて途切れても大丈夫なようにする
-      content: `📁 **${tag}** に新しい画像がアップロードされました！\n\n${pageUrl}`,
-      
-      // 画像自体は必ず表示させるための仕掛け（直接リンクを裏で渡す）
+      // 本文にはURLを出さない（2列になる・展開が失敗するのを完全に防ぐ）
+      content: `📁 **${tag}** に新しい画像がアップロードされました！`,
+      // 埋め込み(Embed)の枠にURLと画像をセットする
       embeds: [{ 
-        title: "画像をフルサイズで見る",
-        url: pageUrl,
-        image: { url: imageUrl }, 
+        title: "📸 画像をフルサイズで見る",
+        url: safeUrl,
+        image: { url: safeUrl }, 
         color: 3447003 
       }]
     };
@@ -868,7 +861,7 @@
   // アップロード処理本体
   // ==========================================
   async function upload() {
-    let key = elApiSelect.value; // ★選択中のAPIキーを取得★
+    let key = elApiSelect.value; // 選択中のAPIキーを使用
     if (!key) return alert("ImgBB APIキーが未設定です。システム設定から追加してください。");
     if (selectedFiles.length === 0) return alert("画像を選択してください。");
 
@@ -894,14 +887,11 @@
         });
 
         if (result && result.success) {
-          
-          // ★変更: ビュアーURL(pageUrl) と 画像直接URL(imageUrl) の両方を活用★
-          let pageUrl = result.data.url;
-          let imageUrl = result.data.display_url || result.data.url;
+          // ImgBBのAPIは data.url に直リンクを返す
+          let imageUrl = result.data.url;
 
           historyData.push({
-            url: pageUrl,
-            imageUrl: imageUrl, // 履歴にも直接URLを保存（プレビュー表示が早くなる）
+            url: imageUrl,
             tag: tag,
             date: new Date().toLocaleString()
           });
@@ -909,8 +899,8 @@
           hasNewHistory = true;
           successCount++;
           
-          // Discordには両方のURLを渡す
-          await sendDiscordNotification(pageUrl, imageUrl, tag);
+          // 画像リンクのみをDiscordへ渡す
+          await sendDiscordNotification(imageUrl, tag);
         }
       } catch (error) {
         alert(`${i + 1}件目のアップロードに失敗しました。\n原因: ${error}`);
@@ -982,12 +972,9 @@
     displayData.forEach(x => {
       let d = document.createElement("div");
       d.className = "history-item";
-      
-      // 古い履歴データにも対応するため、imageUrlがなければurlを使う
-      let previewImgUrl = x.imageUrl || x.url;
 
       d.innerHTML = `
-        <img src="${previewImgUrl}" loading="lazy" alt="Image" onclick="openModal('${previewImgUrl}')" title="クリックで拡大">
+        <img src="${x.url}" loading="lazy" alt="Image" onclick="openModal('${x.url}')" title="クリックで拡大">
         <div class="history-info">
           <div class="tag">📁 ${x.tag}</div>
           <div class="date">${x.date}</div>
@@ -1043,7 +1030,6 @@
   window.addTag = addTag;
   window.upload = upload;
   
-  // ★ API操作用の新しい関数
   window.addAPI = addAPI;
   window.deleteAPI = deleteAPI;
   
