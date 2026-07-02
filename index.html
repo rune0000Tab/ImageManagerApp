@@ -411,18 +411,27 @@
       </div>
     </div>
 
-    <!-- システム設定パネル (全体設定) -->
+    <!-- ★システム設定パネル (複数API管理に対応)★ -->
     <div class="panel">
-      <div class="panel-header">システム設定</div>
+      <div class="panel-header">システム設定 (ImgBB API)</div>
       <div class="panel-body">
-        <div class="form-group" style="margin-bottom: 0;">
-          <label>ImgBB APIキー <span class="required">*必須</span></label>
+        
+        <div class="form-group">
+          <label>使用するAPIキー <span class="required">*必須</span></label>
           <div class="flex-group">
-            <input id="apikey" type="text" placeholder="APIキーを入力">
-            <button onclick="saveAPI()" class="btn btn-default" style="width: 50px;">保存</button>
-            <button onclick="changeAPI()" class="btn btn-danger" style="width: 50px;">変更</button>
+            <select id="apiSelect" onchange="localStorage.setItem('selectedApi', this.value)"></select>
+            <button onclick="deleteAPI()" class="btn btn-danger" style="width: auto;">削除</button>
           </div>
         </div>
+
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>新規APIキー追加</label>
+          <div class="flex-group">
+            <input id="newApi" type="text" placeholder="APIキーを入力">
+            <button onclick="addAPI()" class="btn btn-default" style="width: auto;">追加</button>
+          </div>
+        </div>
+
       </div>
     </div>
   </aside>
@@ -453,13 +462,13 @@
   </main>
 </div>
 
-<!-- ★ 画像拡大用モーダル ★ -->
+<!-- 画像拡大用モーダル -->
 <div id="imageModal" class="modal" onclick="closeModal()" style="padding-top: 30px;">
   <span class="close-btn">&times;</span>
   <img class="modal-content" id="modalImage">
 </div>
 
-<!-- ★ .exeでも動く！カスタムパスワード入力モーダル ★ -->
+<!-- パスワード入力モーダル -->
 <div id="passwordModal" class="modal" style="display:none; align-items:center; justify-content:center;">
   <div class="pwd-modal-inner">
     <h3 style="margin-top: 0; margin-bottom: 15px; color: #1e293b; font-size: 16px;">🔐 パスワード認証</h3>
@@ -508,7 +517,11 @@
   const elTagSelect = document.getElementById('tagSelect');
   const elNewTag = document.getElementById('newTag');
   const elUploadBtn = document.getElementById('uploadBtn');
-  const elApikey = document.getElementById('apikey');
+  
+  // ★追加: APIキー関連の要素
+  const elApiSelect = document.getElementById('apiSelect');
+  const elNewApi = document.getElementById('newApi');
+
   const elWebhookUrl = document.getElementById('webhookUrl');
   const elHistory = document.getElementById('history');
   const elFilterSelect = document.getElementById('filterSelect');
@@ -526,11 +539,12 @@
   let historyData = [];
   let tags = ["default"];
   let webhooks = {};
+  let apiKeys = []; // ★複数APIキーを管理する配列★
   
   const PASSWORD = "851300";
 
   // ==========================================
-  // 🔐 カスタムパスワードモーダルの処理（★バグ修正版★）
+  // 🔐 カスタムパスワードモーダルの処理
   // ==========================================
   let passwordCallback = null;
 
@@ -550,14 +564,9 @@
 
   window.submitPassword = function() {
     const pwd = document.getElementById('modalPasswordInput').value;
-    const cb = passwordCallback; // 消える前に保存しておく！
-    
-    closePasswordModal(); // モーダルを閉じる
-    
-    // パスワードの判定を実行する
-    if (cb) {
-      cb(pwd);
-    }
+    const cb = passwordCallback; 
+    closePasswordModal(); 
+    if (cb) cb(pwd);
   };
 
   document.getElementById('modalPasswordInput').addEventListener('keypress', function(e) {
@@ -577,8 +586,12 @@
       historyData = JSON.parse(localStorage.getItem("history") || "[]");
       tags = JSON.parse(localStorage.getItem("tags") || '["default"]');
       webhooks = JSON.parse(localStorage.getItem("webhooks") || "{}");
-      elApikey.value = localStorage.getItem("api") || "";
-      if(elApikey.value) elApikey.disabled = true;
+      apiKeys = JSON.parse(localStorage.getItem("apiKeys") || "[]");
+      
+      // 旧バージョンのAPIキー引き継ぎ処理
+      let oldApi = localStorage.getItem("api");
+      if (oldApi && apiKeys.length === 0) apiKeys.push(oldApi);
+
       updateUI();
       return;
     }
@@ -589,10 +602,10 @@
         tags = data.tags || ["default"];
         historyData = data.history || [];
         webhooks = data.webhooks || {};
-        
-        if (data.api && elApikey.disabled) {
-          elApikey.value = data.api;
-        }
+        apiKeys = data.apiKeys || [];
+
+        // データベースから旧バージョンのAPIキーを引き継ぐ
+        if (data.api && apiKeys.length === 0) apiKeys.push(data.api);
 
         elCloudStatus.innerHTML = '<div class="status-dot" style="background:#22c55e;"></div>Realtime Sync On';
         elCloudStatus.style.color = "#22c55e";
@@ -613,7 +626,7 @@
       localStorage.setItem("tags", JSON.stringify(tags));
       localStorage.setItem("history", JSON.stringify(historyData));
       localStorage.setItem("webhooks", JSON.stringify(webhooks));
-      localStorage.setItem("api", elApikey.value);
+      localStorage.setItem("apiKeys", JSON.stringify(apiKeys));
       return;
     }
 
@@ -622,7 +635,7 @@
         tags: tags,
         history: historyData,
         webhooks: webhooks,
-        api: elApikey.value
+        apiKeys: apiKeys
       });
     } catch (e) {
       console.error("保存失敗:", e);
@@ -633,9 +646,9 @@
   // UI とアクションの処理
   // ==========================================
   function updateUI() {
+    // 1. フォルダーのUI更新
     let currentTag = elTagSelect.value;
     let currentFilter = elFilterSelect.value;
-
     elTagSelect.innerHTML = "";
     elFilterSelect.innerHTML = '<option value="all">📁 すべてのフォルダー</option>';
     
@@ -649,6 +662,27 @@
     if (tags.includes(currentTag)) elTagSelect.value = currentTag;
     if (currentFilter === "all" || tags.includes(currentFilter)) elFilterSelect.value = currentFilter;
 
+    // 2. ★APIキーのセレクトボックスの更新★
+    let currentApi = elApiSelect.value || localStorage.getItem("selectedApi");
+    elApiSelect.innerHTML = "";
+    apiKeys.forEach(k => {
+      let o = document.createElement("option"); 
+      o.value = k; 
+      // 長いキーを少し見やすくする
+      o.textContent = "🔑 " + k.substring(0, 10) + "..."; 
+      elApiSelect.appendChild(o);
+    });
+    
+    if (apiKeys.includes(currentApi)) {
+      elApiSelect.value = currentApi;
+    } else if (apiKeys.length > 0) {
+      elApiSelect.value = apiKeys[0];
+      localStorage.setItem("selectedApi", apiKeys[0]);
+    } else {
+      localStorage.removeItem("selectedApi");
+    }
+
+    // 3. その他UIの復元
     let savedCols = localStorage.getItem("historyColumns") || "5";
     elColumnSelect.value = savedCols;
     changeColumns();
@@ -722,23 +756,47 @@
     }
   }
 
-  async function saveAPI() {
-    if(!elApikey.value.trim()) return alert("APIキーを入力してください");
-    elApikey.disabled = true;
-    await saveToFirebase();
-    alert("保存しました");
-  }
-  
-  function changeAPI() {
-    showPasswordPrompt((pwd) => {
+  // ==========================================
+  // ★ 複数APIキーの追加・削除処理 ★
+  // ==========================================
+  function addAPI() {
+    let val = elNewApi.value.trim();
+    if (!val) return;
+    
+    // API追加時にも一応パスワード保護をかけておく
+    showPasswordPrompt(async (pwd) => {
       if (pwd === PASSWORD) {
-        elApikey.disabled = false; 
+        if (!apiKeys.includes(val)) {
+          apiKeys.push(val);
+          await saveToFirebase();
+          alert("新しいAPIキーを追加しました！");
+        }
+        elNewApi.value = "";
       } else {
         alert("パスワードが違います");
       }
     });
   }
 
+  function deleteAPI() {
+    let val = elApiSelect.value;
+    if (!val) return alert("削除するAPIキーが選択されていません");
+    
+    showPasswordPrompt(async (pwd) => {
+      if (pwd === PASSWORD) {
+        if (confirm("現在選択しているAPIキーをデータベースから完全に削除しますか？")) {
+          apiKeys = apiKeys.filter(k => k !== val);
+          await saveToFirebase();
+        }
+      } else {
+        alert("パスワードが違います");
+      }
+    });
+  }
+
+  // ==========================================
+  // Discord通知関連
+  // ==========================================
   function onTagChange() {
     let tag = elTagSelect.value;
     let hook = webhooks[tag];
@@ -779,15 +837,19 @@
     });
   }
 
-  async function sendDiscordNotification(imageUrl, tag) {
+  // ★変更: URL改行問題対応（確実に画像を埋め込む）★
+  async function sendDiscordNotification(pageUrl, imageUrl, tag) {
     let hook = webhooks[tag];
     if (!hook) return; 
 
     const payload = {
-      content: `📁 **${tag}** に新しい画像がアップロードされました！\n\n${imageUrl}`,
+      // ユーザーが見るURLはcontentに。URLが長くて途切れても大丈夫なようにする
+      content: `📁 **${tag}** に新しい画像がアップロードされました！\n\n${pageUrl}`,
+      
+      // 画像自体は必ず表示させるための仕掛け（直接リンクを裏で渡す）
       embeds: [{ 
-        title: "画像を見る",
-        url: imageUrl,
+        title: "画像をフルサイズで見る",
+        url: pageUrl,
         image: { url: imageUrl }, 
         color: 3447003 
       }]
@@ -801,9 +863,13 @@
     } catch (error) { console.error("Discordエラー:", error); }
   }
 
+
+  // ==========================================
+  // アップロード処理本体
+  // ==========================================
   async function upload() {
-    let key = elApikey.value;
-    if (!key) return alert("ImgBB APIキーが未設定です。");
+    let key = elApiSelect.value; // ★選択中のAPIキーを取得★
+    if (!key) return alert("ImgBB APIキーが未設定です。システム設定から追加してください。");
     if (selectedFiles.length === 0) return alert("画像を選択してください。");
 
     let tag = elTagSelect.value;
@@ -828,14 +894,23 @@
         });
 
         if (result && result.success) {
+          
+          // ★変更: ビュアーURL(pageUrl) と 画像直接URL(imageUrl) の両方を活用★
+          let pageUrl = result.data.url;
+          let imageUrl = result.data.display_url || result.data.url;
+
           historyData.push({
-            url: result.data.url,
+            url: pageUrl,
+            imageUrl: imageUrl, // 履歴にも直接URLを保存（プレビュー表示が早くなる）
             tag: tag,
             date: new Date().toLocaleString()
           });
+          
           hasNewHistory = true;
           successCount++;
-          await sendDiscordNotification(result.data.url, tag);
+          
+          // Discordには両方のURLを渡す
+          await sendDiscordNotification(pageUrl, imageUrl, tag);
         }
       } catch (error) {
         alert(`${i + 1}件目のアップロードに失敗しました。\n原因: ${error}`);
@@ -907,8 +982,12 @@
     displayData.forEach(x => {
       let d = document.createElement("div");
       d.className = "history-item";
+      
+      // 古い履歴データにも対応するため、imageUrlがなければurlを使う
+      let previewImgUrl = x.imageUrl || x.url;
+
       d.innerHTML = `
-        <img src="${x.url}" loading="lazy" alt="Image" onclick="openModal('${x.url}')" title="クリックで拡大">
+        <img src="${previewImgUrl}" loading="lazy" alt="Image" onclick="openModal('${previewImgUrl}')" title="クリックで拡大">
         <div class="history-info">
           <div class="tag">📁 ${x.tag}</div>
           <div class="date">${x.date}</div>
@@ -963,8 +1042,11 @@
   window.deleteSelectedTag = deleteSelectedTag;
   window.addTag = addTag;
   window.upload = upload;
-  window.saveAPI = saveAPI;
-  window.changeAPI = changeAPI;
+  
+  // ★ API操作用の新しい関数
+  window.addAPI = addAPI;
+  window.deleteAPI = deleteAPI;
+  
   window.onTagChange = onTagChange;
   window.saveWebhook = saveWebhook;
   window.changeWebhook = changeWebhook;
